@@ -610,10 +610,9 @@ exports.validateKey = (req, res)=>
         if (err)
             return handleError(res, err);
         
-        if (userfound)
-            return res.json({status:'success',data:[],msg:'valid'});
-        else
+        if (!userfound)
             return res.json({status:'failure',data:[],msg:'This link has expired !!!'});
+        return res.json({status:'success',data:[],msg:'valid'});
     });
 }
                                                     /**

@@ -11,6 +11,7 @@ let UserSchema = new Schema(
   avatar: String,
   phone: String,
   hashedPassword: String,
+  tempPassword: String,
   email: { type: String, lowercase: true },
   role: { type: String, default: 'user' },
   salt: String,

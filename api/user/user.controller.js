@@ -246,6 +246,198 @@ exports.resendVerification = (req, res)=>
     })
 }
                                                     /**
+                                                        * Get my Profile
+                                                    **/
+exports.myProfile = (req, res, next)=>
+{
+    const userId = req.user._id;
+    User.findOne({ _id: userId }, '-salt -hashedPassword -emailVerifyKey -twoFaKey').lean().exec((err, user)=>
+    {
+        if (err) 
+            return next(err);
+        else if (!user)
+            return res.status(401).json({status:'failure',data:[],msg:'User not found'});
+        return res.json({status:'success',data:user,msg:'Profile details'});
+    });
+};
+                                                    /**
+                                                        * Update user profile
+                                                    **/
+exports.updateProfile = (req, res)=>
+{
+    let allowedKeys = ['avatar','name','phone','timezone'];
+    let updateObj = {};
+    let isUpdate = false;
+    allowedKeys.forEach( key=>
+    {
+        if (req.body[key])
+        {
+            isUpdate = true;
+            updateObj[key] = req.body[key];
+        }
+    });
+    if (isUpdate)
+    {
+        User.updateOne({_id: req.user._id},{$set:updateObj}, (err,status)=>
+        {
+            if (err)
+                return handleError(res, err);
+            if (!status.nModified)
+                return res.json({status:'failure',data:[],msg:'No records updated'});
+            return res.json({status:'success',data:[],msg:'Updated Successfully'});
+        })
+    }
+    else return res.json({status:'failure',data:[],msg:'Please Provide Valid Key'});
+}
+                                                    /**
+                                                        * Change a users password
+                                                    **/
+exports.changePassword = (req, res, next) =>
+{
+  const userId = req.user._id;
+  const oldPass = String(req.body.oldPassword);
+  const newPass = String(req.body.newPassword);
+
+  if (!req.body.oldPassword || !req.body.newPassword || req.body.oldPassword == '' || req.body.newPassword == '')
+    return res.json({status:'failure',data:[],msg:'Please provide password'});
+
+  User.findById(userId, (err, user) =>
+  {
+    if(user.authenticate(oldPass))
+    {
+      user.password = newPass;
+      user.save((err)=>
+      {
+        if (err) return validationError(res, err);
+
+        const templatePath = "mail_templates/change_password.html";
+        let templateContent = fs.readFileSync(templatePath, "utf8");
+        templateContent = templateContent.replace("##EMAIL_LOGO##", config.mail_logo);
+        templateContent = templateContent.replace(new RegExp("##PROJECT_NAME##",'gi'), config.project_name);
+        templateContent = templateContent.replace("##USERNAME##", user.name);
+        templateContent = templateContent.replace("##USERMAIL##", user.email);
+        templateContent = templateContent.replace("##REQ_TIME##", new Date());
+        templateContent = templateContent.replace("##MAIL_FOOTER##", config.mail_footer);
+
+        const data = {
+            from: config.mail_from_email,
+            to: user.email,
+            subject: config.project_name + ' - Password Changed',
+            html: templateContent
+        }
+
+        config.mailTransporter.sendMail(data, (error, info) =>
+        {
+            if (error)
+                console.log(error);
+            else
+                console.log('Email sent:', info.envelope);
+        });
+        return res.json({status:'success',data:[],msg:'Password changed Successfully'});
+      });
+    }
+    else
+      return res.send({status:'failure',data:[],msg:'Incorrect current password'});
+  });
+};
+                                                    /**
+                                                        * Reset Password
+                                                    **/
+exports.forgotPassword = (req, res)=>
+{
+    if (!req.body.email || req.body.email == '')
+        return res.json({status:'failure',data:[],msg:'Please provide your Email !!!'});
+
+    User.findOne({email:req.body.email}, (err, userfound)=>
+    {
+        if (err) return handleError(res, err);
+        if (userfound)
+        {
+            let randcode = "";
+            let possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+            for (var i = 0; i < 15; i++)
+                randcode += possible.charAt(Math.floor(Math.random() * possible.length));
+
+            User.updateOne({_id:userfound._id},{$set:{tempPassword:randcode}},function(err1,status)
+            {
+                if (err1) return handleError(res, err1);
+                if (status.nModified)
+                {
+                    const reset_link = `${config.clientdomain}/api/users/passwordKey/${randcode}`;
+                    const templatePath = "mail_templates/forgot_password.html";
+                    let templateContent = fs.readFileSync(templatePath, "utf8");
+                    templateContent = templateContent.replace("##EMAIL_LOGO##", config.mail_logo);
+                    templateContent = templateContent.replace(new RegExp("##PROJECT_NAME##",'gi'), config.project_name);
+                    templateContent = templateContent.replace("##USERNAME##", userfound.name);
+                    templateContent = templateContent.replace("##USERMAIL##", userfound.email);
+                    templateContent = templateContent.replace("##REQ_TIME##", new Date());
+                    templateContent = templateContent.replace("##RESET_LINK##", reset_link);
+                    templateContent = templateContent.replace("##MAIL_FOOTER##", config.mail_footer);
+                    
+                    const data = {
+                        from: config.mail_from_email,
+                        to: userfound.email,
+                        subject: config.project_name + ' - Reset your password',
+                        html: templateContent
+                    }
+
+                    config.mailTransporter.sendMail(data, (error, info) =>
+                    {
+                        if (error) console.log(error);
+                        else console.log('Email sent:', info.envelope);
+                    });
+                    return res.json({status:'success',data:[],msg:`Please check your Email !!!`});
+                }
+                else return res.json({status:'failure',data:[],msg:'Something went wrong'});
+            })
+        }
+        else return res.json({status:'failure',data:[],msg:'Invalid email provided'});
+    });
+}
+                                                    /**
+                                                        * Validate Password Key 
+                                                    **/
+exports.passwordKey = (req, res)=>
+{
+    if (!req.params.tempPass || req.params.tempPass == '')
+        return res.json({status:'failure',data:[],msg:'Invalid request'});
+    
+    User.findOne({tempPassword:req.params.tempPass},(err,userfound)=>
+    {
+        if (err) return handleError(res, err);
+        if (!userfound)
+            return res.json({status:'failure',data:[],msg:'This link has expired !!!'});
+        return res.json({status:'success',data:[],msg:'valid'});
+    });
+}
+                                                    /**
+                                                        * Setup New Password
+                                                    **/
+exports.setPassword = (req, res)=>
+{
+    if (!req.body.key || req.body.key == '')
+        return res.json({status:'failure',data:[],msg:'Invalid request. Please try again'});
+    if (!req.body.password || req.body.password == '')
+        return res.json({status:'failure',data:[],msg:'Please provide password'})
+
+    User.findOne({tempPassword:req.body.key}, (err, user) =>
+    {
+        if (user)
+        {
+            user.password = req.body.password;
+            user.tempPassword = '';
+            user.save((err,saved)=>
+            {
+                if (err) return handleError(res, err) 
+                if (!saved) 
+                    return res.json({status:'failure',data:[],msg:'Unable to process your request. Please try again'});
+                return res.json({status:'success',data:[],msg:'Password updated Successfully'});
+            });
+        }
+        else return res.json({status:'failure',data:[],msg:'Invalid request, The link might have expired. Please try again.'});
+    });
+}
+                                                    /**
                                                         * Email Verification
                                                     **/
 function configureIpNotification(req, user, next)
@@ -287,7 +479,7 @@ function configureIpNotification(req, user, next)
     });
 }
                                                     /**
-                                                        * On Login Update user in DB and send email
+                                                        * On Login Update User & Send Email
                                                     **/
 function loginNotification(req, userfound, res, next)
 {
