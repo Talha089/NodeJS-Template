@@ -17,20 +17,20 @@ const client = require('twilio')(config.twillio.accountSid, config.twillio.authT
                                                     /**
                                                         * Creates a new user
                                                     **/
-exports.create = (req, res, next) =>
+exports.create = (req, res) =>
 {
     if (!req.body.name || req.body.name == '')
-        return res.json({status:'failure',data:[],msg:'Please provide name'});
+        return res.json({status: false,data:[],msg:'Please provide name'});
     if (!req.body.email || req.body.email == '')
-        return res.json({status:'failure',data:[],msg:'Please provide email id'});
+        return res.json({status: false,data:[],msg:'Please provide email id'});
     if (!req.body.password || req.body.password == '')
-        return res.json({status:'failure',data:[],msg:'Please provide password for your account'});
+        return res.json({status: false,data:[],msg:'Please provide password for your account'});
     if (!req.body.terms_cond || req.body.terms_cond == '')
-        return res.json({status:'failure',data:[],msg:'Please agree to terms and conditions to proceed'});
+        return res.json({status: false,data:[],msg:'Please agree to terms and conditions to proceed'});
     if (validator.isEmail(req.body.email) === false) 
-        return res.json({status:'failure',data:[],msg:'Please provide valid email id'});
+        return res.json({status: false,data:[],msg:'Please provide valid email id'});
     if (!req.body.uname || req.body.uname == '')
-        return res.json({Status:'failure',data:[],msg:'Please provide username !!!'});
+        return res.json({status: false,data:[],msg:'Please provide username !!!'});
     
     const uname = req.body.uname.toLowerCase();
     const umail = req.body.email.toLowerCase();
@@ -39,8 +39,8 @@ exports.create = (req, res, next) =>
         if (err) return handleError(res, err);
         if (userfound) 
             if (userfound.email == umail)
-                return res.json({status:"failure",data:[],msg:"Email is already used !!!"});
-            else return res.json({status:"failure",data:[],msg:"Username is already used !!!"});
+                return res.json({status: false,data:[],msg:"Email is already used !!!"});
+            else return res.json({status: false,data:[],msg:"Username is already used !!!"});
         else
         {
             let randcode = "";
@@ -87,7 +87,7 @@ exports.create = (req, res, next) =>
                 });
 
                 const token = jwt.sign({_id: user._id }, config.secrets.session, { expiresIn: 60*60*3, algorithm: 'HS256' });
-                return res.json({ status:"success",data:{token: token },msg:'Registered successfully. Please confirm your Email !!'});
+                return res.json({ status: true,data:{token: token },msg:'Registered successfully. Please confirm your Email !!'});
             });
         }
     })
@@ -98,9 +98,9 @@ exports.create = (req, res, next) =>
 exports.authenticate = (req, res) =>
 {
     if (!req.body.email || req.body.email == '')
-        return res.json({status:'failure',data:[],msg:'Enter Email to Login !!'});
+        return res.json({status: false,data:[],msg:'Enter Email to Login !!'});
     if (!req.body.password || req.body.password == '')
-        return res.json({status:'failure',data:[],msg:'Enter Password to Login !!'});
+        return res.json({status: false,data:[],msg:'Enter Password to Login !!'});
     
     User.findOne({email:req.body.email},{source:0},(err,userfound)=>
     {
@@ -108,30 +108,30 @@ exports.authenticate = (req, res) =>
         if (userfound)
         {
             if (!userfound.authenticate(req.body.password))
-                return res.json({status:'failure',data:[],msg:'Invalid Password !!'});
+                return res.json({status: false,data:[],msg:'Invalid Password !!'});
             else if(!userfound.emailVerified)
-                return res.json({status:'failure',data:[],msg:'Please verify your email address to proceed.'});
+                return res.json({status: false,data:[],msg:'Please verify your email address to proceed.'});
             else
             {
-                Logging.find({userId:userfound._id, ipAddress:req.clientIp}).exec((error, login)=>
+                Logging.find({userId: userfound._id, ipAddress: process.env.IP}).exec((error, login)=>
                 {
                     if(error) 
                         return handleError(res, error);
-                    // else if(login.length === 0)
-                    //     configureIpNotification(req, userfound, (data)=>
-                    //     {
-                    //         return res.json({status:'failure', data:[], msg:'Please Verify your Device by email !!!'});
-                    //     });
+                    else if(login.length === 0)
+                        configureIpNotification(req, userfound, (data)=>
+                        {
+                            return res.json({status: false, data:[], msg:'Please Verify your Device by email !!!'});
+                        });
                     else if (!userfound.twoFaEnabled)
                         loginNotification(req, userfound, res, (cbData)=>
                         {
                             return res.json({
-                                status:'success',
+                                status: true,
                                 data:{
-                                    token:cbData.token,
-                                    id:userfound._id,
-                                    twoFaEnabled:false,
-                                    role:userfound.role
+                                    token: cbData.token,
+                                    id: userfound._id,
+                                    twoFaEnabled: false,
+                                    role: userfound.role
                                 },msg:'Login Sucessfull !!'});
                         });
                     else
@@ -140,21 +140,22 @@ exports.authenticate = (req, res) =>
                             {_id: userfound._id }, 
                             config.secrets.session, 
                             { expiresIn: 60*60*3,algorithm: 'HS256' });
-                            
-                        return res.json({ 
-                            status:'success', 
+
+                        return res.json(
+                        {
+                            status: true, 
                             data:{ 
                                 twoFaEnabled:true, 
                                 token:token, 
                                 role:userfound.role, 
                                 id:userfound._id 
-                            },msg:'Waiting for 2FA'});
+                            },msg:'Waiting for 2FA'
+                        });
                     }
                 });
             }
         }
-        else
-            return res.json({status:'failure',data:[],msg:'Invalid Email !!'});
+        else return res.json({status: false,data:[],msg:'Invalid Email !!'});
     });
 }
                                                     /**
@@ -163,26 +164,62 @@ exports.authenticate = (req, res) =>
 exports.verifyEmail = (req, res)=>
 {
     if (!req.params.actCode || req.params.actCode == '')
-        return res.json({status:'failure', data:[], msg:'Invalid request. Please try again'})
+        return res.json({status: false, data:[], msg:'Invalid request. Please try again'})
 
-    User.findOne({emailVerifyKey:req.params.actCode,emailVerified:false},{},(err,userDetails)=>
+    User.findOne({emailVerifyKey:req.params.actCode,emailVerified:false},{},(error,userDetails)=>
     {
-        if (err) return handleError(res, err);
-        if (userDetails)
+        if (error) return handleError(res, error);
+        else if (userDetails)
         {
             logging.newlog(req,userDetails._id);
             const dateNow = new Date();
-            User.updateOne({_id:userDetails._id},{$set:{emailVerified:true,isActive:true,updatedBy:userDetails._id,updatedAt:dateNow},$unset:{emailVerifyKey:1}}, (err1,status)=>
+            User.updateOne({_id:userDetails._id},{$set:{emailVerified: true, isActive: true, updatedBy: userDetails._id, updatedAt: dateNow}, $unset: {emailVerifyKey: 1}}, (error, status)=>
             {
-                if (err1) return handleError(res, err);
-                if (status.nModified)
-                    return res.json({status:'success',data:[],msg:'Successfully verified your email !!!'});
-                else 
-                    return res.json({status:'success',data:[],msg:'Something went wrong. Please try again !!!'});
+                if (error) return handleError(res, error);
+                if (!status.nModified)
+                    return res.json({status: false, data:[], msg: 'Something went wrong. Please try again !!!'});
+                return res.json({status: true, data:[], msg: 'Successfully verified your email !!!'});
             })
         }
-        else return res.json({status:'failure',data:[],msg:'This link got expired !!!'});
+        else return res.json({status: false, data: [], msg: 'This link got expired !!!'});
     })
+}
+                                                    /**
+                                                        * Validating IP 
+                                                    **/
+exports.verifyIP = (req, res)=>
+{
+    if (!req.params.ip || req.params.ip == '')
+        return res.json({status: false,data:[],msg:'Invalid request'});
+    User.findOne({ipVerifyKey: req.params.ip},(error, userfound)=>
+    {
+        if (error) return handleError(res, error);
+        if (userfound)
+        {
+            User.updateOne({_id: userfound._id}, {$unset: {ipVerifyKey: 1}}, (error, updatedUser)=>
+            {
+                if(error) return handleError(res, error);
+                else if (updatedUser)
+                {
+                    const log = new Logging(
+                    {
+                        accessTime : new Date(),
+                        userId : userfound._id,
+                        ipAddress : process.env.IP,
+                        requestUrl : req.originalUrl,
+                        userAgent : req.headers['user-agent']
+                    });
+                    log.save((error, saved)=>
+                    {
+                        if(error) return handleError(res, err);
+                        return res.json({status: true,data:[],msg:'Device Verified you can Login Now !!!'});
+                    });
+                }
+                else return res.json({status: false,data:[],msg:'This link has expired !!!'});
+            });
+        }
+        else return res.json({status: false,data:[],msg:'This link has expired !!!'});
+    });
 }
                                                     /**
                                                         * Resend Verification Email
@@ -190,13 +227,13 @@ exports.verifyEmail = (req, res)=>
 exports.resendVerification = (req, res)=>
 {
     if (!req.body.email || req.body.email == '')
-        return res.json({status:'failure',data:[],msg:'Please provide email address'});
+        return res.json({status: false,data:[],msg:'Please provide email address'});
     if (validator.isEmail(req.body.email) === false) 
-        return res.json({status:'failure',data:[],msg:'Please provide valid email address'});
+        return res.json({status: false,data:[],msg:'Please provide valid email address'});
 
-    User.findOne({email:req.body.email}, (er1,userFound)=>
+    User.findOne({email:req.body.email}, (error,userFound)=>
     {
-        if (er1) return handleError(res, er1);
+        if (error) return handleError(res, error);
         if (userFound)
         {
             if (!userFound.emailVerified)
@@ -206,9 +243,9 @@ exports.resendVerification = (req, res)=>
                 for (var i = 0; i < 15; i++)
                     randcode += possible.charAt(Math.floor(Math.random() * possible.length));
 
-                User.updateOne({_id:userFound._id},{$set:{emailVerifyKey:randcode}},(err,status)=>
+                User.updateOne({_id: userFound._id},{$set: {emailVerifyKey: randcode}},(error, status)=>
                 {
-                    if (err) return handleError(res, err);
+                    if (error) return handleError(res, error);
                     if (status.nModified)
                     {
                         const activationLink = `${config.thisdomain}/api/users/verifyEmail/${randcode}`;
@@ -229,20 +266,16 @@ exports.resendVerification = (req, res)=>
 
                         config.mailTransporter.sendMail(data, (error, info) =>
                         {
-                            if (error)
-                                console.log(error);
-                            else
-                                console.log('Email sent:', info.envelope);
+                            if (error) console.log(error);
+                            else console.log('Email sent:', info.envelope);
                         });
-                        return res.json({status:'success',data:[],msg:'Please check your Email.'})
+                        return res.json({status: true,data:[],msg:'Please check your Email.'})
                     }
                 })
             }
-            else
-                return res.json({status:'failure',data:[],msg:'Account have already got verified.'});
+            else return res.json({status: false,data:[],msg:'Account have already got verified.'});
         }
-        else
-            return res.json({status:'failure',data:[],msg:'Invalid email provided or Already got verified.'});
+        else return res.json({status: false,data:[],msg:'Invalid email provided or Already got verified.'});
     })
 }
                                                     /**
@@ -251,13 +284,12 @@ exports.resendVerification = (req, res)=>
 exports.myProfile = (req, res, next)=>
 {
     const userId = req.user._id;
-    User.findOne({ _id: userId }, '-salt -hashedPassword -emailVerifyKey -twoFaKey').lean().exec((err, user)=>
+    User.findOne({ _id: userId }, '-salt -hashedPassword -emailVerifyKey -twoFaKey').lean().exec((error, user)=>
     {
-        if (err) 
-            return next(err);
+        if (error) return next(error);
         else if (!user)
-            return res.status(401).json({status:'failure',data:[],msg:'User not found'});
-        return res.json({status:'success',data:user,msg:'Profile details'});
+            return res.status(401).json({status: false,data:[],msg:'User not found'});
+        return res.json({status: true,data:user,msg:'Profile details'});
     });
 };
                                                     /**
@@ -278,30 +310,29 @@ exports.updateProfile = (req, res)=>
     });
     if (isUpdate)
     {
-        User.updateOne({_id: req.user._id},{$set:updateObj}, (err,status)=>
+        User.updateOne({_id: req.user._id},{$set:updateObj}, (error,status)=>
         {
-            if (err)
-                return handleError(res, err);
+            if (error) return handleError(res, error);
             if (!status.nModified)
-                return res.json({status:'failure',data:[],msg:'No records updated'});
-            return res.json({status:'success',data:[],msg:'Updated Successfully'});
+                return res.json({status: false,data:[],msg:'No records updated'});
+            return res.json({status: true,data:[],msg:'Updated Successfully'});
         })
     }
-    else return res.json({status:'failure',data:[],msg:'Please Provide Valid Key'});
+    else return res.json({status: false,data:[],msg:'Please Provide Valid Key'});
 }
                                                     /**
                                                         * Change a users password
                                                     **/
-exports.changePassword = (req, res, next) =>
+exports.changePassword = (req, res) =>
 {
   const userId = req.user._id;
   const oldPass = String(req.body.oldPassword);
   const newPass = String(req.body.newPassword);
 
   if (!req.body.oldPassword || !req.body.newPassword || req.body.oldPassword == '' || req.body.newPassword == '')
-    return res.json({status:'failure',data:[],msg:'Please provide password'});
+    return res.json({status: false,data:[],msg:'Please provide password'});
 
-  User.findById(userId, (err, user) =>
+  User.findById(userId, (error, user) =>
   {
     if(user.authenticate(oldPass))
     {
@@ -333,11 +364,11 @@ exports.changePassword = (req, res, next) =>
             else
                 console.log('Email sent:', info.envelope);
         });
-        return res.json({status:'success',data:[],msg:'Password changed Successfully'});
+        return res.json({status: true,data:[],msg:'Password changed Successfully'});
       });
     }
     else
-      return res.send({status:'failure',data:[],msg:'Incorrect current password'});
+      return res.send({status: false,data:[],msg:'Incorrect current password'});
   });
 };
                                                     /**
@@ -346,7 +377,7 @@ exports.changePassword = (req, res, next) =>
 exports.forgotPassword = (req, res)=>
 {
     if (!req.body.email || req.body.email == '')
-        return res.json({status:'failure',data:[],msg:'Please provide your Email !!!'});
+        return res.json({status: false,data:[],msg:'Please provide your Email !!!'});
 
     User.findOne({email:req.body.email}, (err, userfound)=>
     {
@@ -386,12 +417,12 @@ exports.forgotPassword = (req, res)=>
                         if (error) console.log(error);
                         else console.log('Email sent:', info.envelope);
                     });
-                    return res.json({status:'success',data:[],msg:`Please check your Email !!!`});
+                    return res.json({status: true,data:[],msg:`Please check your Email !!!`});
                 }
-                else return res.json({status:'failure',data:[],msg:'Something went wrong'});
+                else return res.json({status: false,data:[],msg:'Something went wrong'});
             })
         }
-        else return res.json({status:'failure',data:[],msg:'Invalid email provided'});
+        else return res.json({status: false,data:[],msg:'Invalid email provided'});
     });
 }
                                                     /**
@@ -400,14 +431,14 @@ exports.forgotPassword = (req, res)=>
 exports.passwordKey = (req, res)=>
 {
     if (!req.params.tempPass || req.params.tempPass == '')
-        return res.json({status:'failure',data:[],msg:'Invalid request'});
+        return res.json({status: false,data:[],msg:'Invalid request'});
     
     User.findOne({tempPassword:req.params.tempPass},(err,userfound)=>
     {
         if (err) return handleError(res, err);
         if (!userfound)
-            return res.json({status:'failure',data:[],msg:'This link has expired !!!'});
-        return res.json({status:'success',data:[],msg:'valid'});
+            return res.json({status: false,data:[],msg:'This link has expired !!!'});
+        return res.json({status: true,data:[],msg:'valid'});
     });
 }
                                                     /**
@@ -416,9 +447,9 @@ exports.passwordKey = (req, res)=>
 exports.setPassword = (req, res)=>
 {
     if (!req.body.key || req.body.key == '')
-        return res.json({status:'failure',data:[],msg:'Invalid request. Please try again'});
+        return res.json({status: false,data:[],msg:'Invalid request. Please try again'});
     if (!req.body.password || req.body.password == '')
-        return res.json({status:'failure',data:[],msg:'Please provide password'})
+        return res.json({status: false,data:[],msg:'Please provide password'})
 
     User.findOne({tempPassword:req.body.key}, (err, user) =>
     {
@@ -430,16 +461,219 @@ exports.setPassword = (req, res)=>
             {
                 if (err) return handleError(res, err) 
                 if (!saved) 
-                    return res.json({status:'failure',data:[],msg:'Unable to process your request. Please try again'});
-                return res.json({status:'success',data:[],msg:'Password updated Successfully'});
+                    return res.json({status: false,data:[],msg:'Unable to process your request. Please try again'});
+                return res.json({status: true,data:[],msg:'Password updated Successfully'});
             });
         }
-        else return res.json({status:'failure',data:[],msg:'Invalid request, The link might have expired. Please try again.'});
+        else return res.json({status: false,data:[],msg:'Invalid request, The link might have expired. Please try again.'});
     });
 }
                                                     /**
-                                                        * Email Verification
+                                                        * Enable SMS Auth or Change phone
                                                     **/
+exports.enableSmsAuth = (req, res)=>
+{
+    let { phone } = req.body;
+    if(!phone || phone == '')
+        return res.json({status: false, data:[], msg:'Please provide phone no'});
+    User.updateOne({_id:req.user._id},{$set:{ phone, smsVerifyEnabled: true}}, (error, status)=>
+    {
+        if (error) return handleError(res, error);
+        if (status.nModified) return res.json({status: true, data:[], msg:'SMS Auth Enabled Sucessfully !!!'});
+        return res.json({status: true, data:[], msg:'SMS Auth Already Enabled !!!'});
+    });
+}
+                                                    /**
+                                                        * Send SMS Authentication
+                                                    **/
+exports.sendSmsAuth = (req, res)=>
+{
+    if(req.user.phone)
+    {
+        let smsCode = Math.floor(1000 + Math.random() * 9000);
+        client.messages.create(
+        {
+            body: `Your Tokenism verification code : ${smsCode}`,
+            from: config.twillio.from,
+            to: req.user.phone
+        });
+
+        User.updateOne({_id:req.user._id, smsVerifyEnabled: true}, {$set: {smsVerifyKey: smsCode}}, (error, status)=>
+        {
+            if (error) return handleError(res, error);
+            if (status.nModified) 
+                return res.json({status: true, data:[], msg: `Message Sent Successfully to ${req.user.phone}`});
+            return res.json({status: false, data:[], msg:'Something went wrong !!!'});
+        });
+    }
+    else return res.json({status: true, data:[], msg: `Unable to find contact number !!!`});
+}
+                                                    /**
+                                                        * Verify SMS Authentication
+                                                    **/
+exports.verifySmsAuth = (req, res)=>
+{
+    if (!req.body.sms_code || req.body.sms_code == '')
+        return res.json({status: false,data:[],msg:'Please provide SMS Code'});
+    User.updateOne({_id:req.user._id, smsVerifyEnabled:true, smsVerifyKey: req.body.sms_code},{$unset:{ smsVerifyKey: 1}}, (error, status)=>
+    {
+        if (error) return handleError(res, er1);
+        else if (status.nModified)
+            return res.json({status: true, data:[], msg: `Sms Succesfully Verified !!!`});
+        return res.json({status: false, data:[], msg:'Invalid Code !!!'});
+    });
+}
+                                                    /**
+                                                        * Disable SMS Authentication
+                                                    **/
+exports.disableSmsAuth = (req, res)=>
+{
+    User.updateOne({_id:req.user._id, smsVerifyEnabled: true},{$set:{ smsVerifyEnabled: false}, $unset:{ smsVerifyKey: 1 }}, (error, status)=>
+    {
+        if (error) return handleError(res, er1);
+        if (status.nModified)
+            return res.json({status: true, data:[], msg: `SMS Auth Disabled Succesfully !!!`});
+        return res.json({status: false, data:[], msg:'SMS Auth Already Disabled !!!'});
+    });
+}
+                                                    /**
+                                                        * Enable 2-FA Auth using SpeakEasy
+                                                    **/
+exports.enable2Factor = (req, res) =>
+{
+    if (req.user.twoFaEnabled)
+        return res.json({status: false,data:[],msg:`2-FA Already Activated !!!`});
+    
+    if (req.user.twoFaUrl) 
+    {
+        QRCode.toDataURL(req.user.twoFaUrl, (err, imageData) =>
+        {
+                                                // Generate Backup Codes //
+            let codesArray = [];
+            if (req.user.backupCodes && req.user.backupCodes.length > 0)
+                codesArray = req.user.backupCodes;
+            else
+            {
+                let i = 0;
+                function generate_code()
+                {
+                    let randcode = "";
+                    let possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+                    for (let i = 0; i < 15; i++)
+                        randcode += possible.charAt(Math.floor(Math.random() * possible.length));
+                    return randcode;
+                }
+                while(i<5)
+                {
+                    codesArray.push(generate_code());
+                    i++;
+                }
+                User.updateOne({_id: req.user._id},{$set: {backupCodes: codesArray}}).exec();
+            }
+            return res.json({status: true, data: {qrData: imageData,secret: req.user.twoFaKey, backupCodes: codesArray},msg:'QR code for enabling 2 factor authentication'});
+        });
+    }
+    else
+    {
+        let secret = speakeasy.generateSecret({length: 20});
+        const user_secret = secret.base32;
+        const otpauth_url = `${secret.otpauth_url.replace('SecretKey',req.user.email)}&issuer=${config.project_name}`;
+
+                                                                // Generate Backup Codes
+        let codesArray = [];
+        let i = 0;
+        function generate_code()
+        {
+            let randcode = "";
+            let possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            for (let i = 0; i < 15; i++)
+                randcode += possible.charAt(Math.floor(Math.random() * possible.length));
+            return randcode;
+        }
+        while(i<5)
+        {
+            codesArray.push(generate_code());
+            i++;
+        }
+        User.updateOne({_id: req.user._id},{$set: {twoFaKey: user_secret, twoFaUrl: otpauth_url, backupCodes: codesArray}}, (err, saved)=>
+        {    
+            if (err) return handleError(res, err);
+            else if (saved.nModified)
+            {
+                QRCode.toDataURL(otpauth_url, (err, imageData)=>
+                {
+                    return res.json({status: true,data:{qrData: imageData, secret: user_secret, backupCodes: codesArray},msg:'QR code for enabling 2 factor authentication.'}); // A data URI for the QR code image
+                });
+            }
+            else return res.json({status: false,data:[],msg:'Something went wrong. Please try again'});
+        })
+    }  
+}
+                                                    /**
+                                                        * Verify 2-FA Auth using Token
+                                                    **/
+exports.verify2Factor = (req, res)=>
+{
+    if (!req.body.token_code || req.body.token_code == '')
+        return res.json({status: false,data:[],msg:'Please provide code to verify'});
+
+    User.findOne({_id:req.user._id}).lean().then((userfound)=>
+    {
+        if (userfound)
+        {
+            if (userfound.twoFaKey)
+            {
+                let verified = speakeasy.totp.verify({ secret: userfound.twoFaKey, encoding: 'base32', token: req.body.token_code });
+                if (verified)
+                {
+                    loginNotification(req, userfound, res, (cbData)=>
+                    {
+                        User.updateOne({_id: req.user._id, twoFaEnabled: false},{$set: {twoFaEnabled: true}}).lean().exec();
+                        return res.json({status: true,data:{token:cbData.token,first_login:cbData.is_first_login,referral_code:cbData.ref_code},msg:'Sucessfully Authenticated !!!'});
+                    });
+                }
+                else return res.json({status: false,data:verified,msg:'Invalid code'});
+            }
+            else return res.json({status: false,data:[],msg:'Please set up two factor authentication'});
+        }
+        else return res.json({status: false,data:[],msg:'Something went wrong. Please try again'});
+    });
+}
+                                                    /**
+                                                        * Disable 2-FA Auth
+                                                    **/
+exports.disable2Factor = (req, res) =>
+{
+    User.updateOne({_id: req.user._id},{$set: {twoFaEnabled: false},$unset: {twoFaUrl: 1, twoFaKey: 1, backupCodes: 1}}).exec((error, status) =>
+    {
+        if (error) return handleError(res, err);
+        else if (status.nModified)
+            return res.json({status: true,data:[],msg:'Disabled 2 Factor authentication'});
+        return res.json({status: false,data:[],msg:'Something went wrong. Please try again'});
+    });
+}
+                                                    /**
+                                                        * Verify Backup Code
+                                                    **/
+exports.verifyBackupCode = (req, res)=>
+{
+    if (!req.body.key)
+        return res.json({status: false,data:[],msg:'Please provide one of your backup codes'});
+    if (req.user.backupCodes && req.user.backupCodes.length > 0) 
+    {
+        let codes = req.user.backupCodes;
+        const index = codes.indexOf(`${req.body.key}`);
+        if (index >= 0)
+        {
+            codes.splice(index, 1);
+            User.updateOne({_id: req.user._id}, {$set: {backupCodes: codes}}).exec();
+            return res.json({status: true, data: codes, msg: 'Successfully verified'});
+        }
+        else return res.json({status: false, data:[], msg:'Invalid key'});
+    }
+    else return res.json({status: false, data:[], msg:'No backup codes found'});
+}
+
 function configureIpNotification(req, user, next)
 {
     let randcode = "";
@@ -451,7 +685,7 @@ function configureIpNotification(req, user, next)
         if(error) next(false);
         else if(status.nModified)
         {
-            let activation_link = `${config.clientdomain}/verifyIp/${randcode}`;
+            let activation_link = `${config.clientdomain}/api/users/verifyIp/${randcode}`;
             const templatePath = "mail_templates/sign_up.html";
             let templateContent = fs.readFileSync(templatePath, "utf8");
             templateContent = templateContent.replace("##EMAIL_LOGO##", config.mail_logo);
@@ -478,9 +712,7 @@ function configureIpNotification(req, user, next)
         else next(false)
     });
 }
-                                                    /**
-                                                        * On Login Update User & Send Email
-                                                    **/
+
 function loginNotification(req, userfound, res, next)
 {
     const templatePath = "mail_templates/sign_in.html";
@@ -517,10 +749,10 @@ function loginNotification(req, userfound, res, next)
 
 const validationError = (res, err)=>
 {
-    return res.status(422).json({status:'failure',data:err,msg:'Something went wrong'});
+    return res.status(422).json({status: false,data:err,msg:'Something went wrong'});
 };
 
 function handleError(res, err)
 {
-    return res.status(500).send({status:'failure',data:err,msg:'Something went wrong'});
+    return res.status(500).send({status: false,data:err,msg:'Something went wrong'});
 };

@@ -24,8 +24,8 @@ router.get('/disableSmsAuth', auth.isAuthenticated(), controller.disableSmsAuth)
 router.put('/changePassword', auth.isAuthenticated(), controller.changePassword);
 router.get('/kyc', auth.isAuthenticated(), auth.isVerified(), controller.getKycInfo); 
 router.post('/saveKyc', auth.isAuthenticated(), auth.isVerified(), controller.saveKyc);
-router.get('/enable2Factor', auth.isAuthenticated(), auth.isVerified(), controller.enable2Factor);
 router.post('/enableSmsAuth', auth.isAuthenticated(), auth.isVerified(), controller.enableSmsAuth);
+router.get('/enable2Factor', auth.isAuthenticated(), auth.isVerified(), controller.enable2Factor);
 router.post('/verify2Factor', auth.isAuthenticated(), auth.isVerified(), controller.verify2Factor); 
 router.get('/disable2Factor', auth.isAuthenticated(), auth.isVerified(), controller.disable2Factor); 
 router.put('/trackme/:status', auth.isAuthenticated(), auth.isVerified(), controller.updateTracking);

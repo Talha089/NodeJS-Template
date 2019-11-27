@@ -6,11 +6,11 @@ const LoggingSchema = new Schema(
 {
   userId:{ type: Schema.Types.ObjectId, ref: 'User' },
   ipAddress: String,
-  user_agent: String,
-  access_time:{ type: Date, default: new Date() },
-  access_token: String,
-  request_url: String,
-  request_data: String,
+  userAgent: String,
+  accessTime:{ type: Date, default: new Date() },
+  accessToken: String,
+  requestUrl: String,
+  requestData: String,
   track:{ type: Boolean, default: false }
 });
 

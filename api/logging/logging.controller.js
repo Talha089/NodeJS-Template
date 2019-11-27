@@ -14,33 +14,29 @@ const util = require('../../utils/encryption.util');
 
 function newlog(req,uid='')
 {
-  if (req.user)
-    uid = req.user._id;
-
+  if (req.user) uid = req.user._id;
   let token = req.headers.authorization ? req.headers.authorization : '';
   let can_track = req.user ? req.user.can_track : false;
-  let logObj = {
+  let logObj = new Logging({
     userId : uid,
-    ipAddress : req.clientIp,
-    user_agent : req.headers['user-agent'],
-    access_token : token,
-    access_time : new Date(),
-    request_url : req.originalUrl,
-    // request_data : util.encryptdata(JSON.stringify(req.body)),
+    ipAddress : process.env.IP,
+    userAgent : req.headers['user-agent'],
+    accessToken : token,
+    accessTime : new Date(),
+    requestUrl : req.originalUrl,
+    requestData : util.encryptdata(JSON.stringify(req.body)),
     track : can_track
-  };
-  let finalLog = new Logging(logObj);
-  finalLog.save((err, saved)=>{});
+  });
+  logObj.save();
 }
 
                                             //GET login history
 exports.loginHistory = (req, res)=>
 {
-    Logging.find({userId:req.user._id,request_url:'/api/users/auth'},{ipAddress:1,access_time:1,user_agent:1}).lean().sort({access_time:-1}).exec((err, logs)=>
+    Logging.find({userId: req.user._id, requestUrl: '/api/users/auth'},{ipAddress: 1, accessTime:1, userAgent: 1}).lean().sort({accessTime:-1}).exec((err, logs)=>
     {
-        if (err)
-            return handleError(res, err);
-        return res.json({status:'success',data:logs,msg:'Login history'});
+        if (err) return handleError(res, err);
+        return res.json({status: true,data:logs,msg:'Login history'});
     });
 }
 

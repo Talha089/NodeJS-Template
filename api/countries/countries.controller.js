@@ -20,7 +20,7 @@ exports.index = function(req, res)
   {
     if(err) 
         return handleError(res, err);
-    return res.status(200).json({status:'success',data:countriesList,msg:'List of countries'});
+    return res.status(200).json({status: true,data:countriesList,msg:'List of countries'});
   });
 };
 

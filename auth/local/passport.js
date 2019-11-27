@@ -15,10 +15,10 @@ exports.setup = function (User, config)
         if (err) return done(err);
 
         if (!user) 
-          return done(null, false, { status:"failure",data: 'This email is not registered.' });
+          return done(null, false, { status: false,data: 'This email is not registered.' });
 
         if (!user.authenticate(password)) 
-          return done(null, false, { status:"failure",data: 'This password is not correct.' });
+          return done(null, false, { status: false,data: 'This password is not correct.' });
           
         return done(null, user);
       });

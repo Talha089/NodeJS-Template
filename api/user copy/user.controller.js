@@ -18,20 +18,20 @@ const client = require('twilio')(config.twillio.accountSid, config.twillio.authT
                                                     /**
                                                         * Creates a new user
                                                     **/
-exports.create = (req, res, next) =>
+exports.create = (req, res) =>
 {
     if (!req.body.name || req.body.name == '')
-        return res.json({status:'failure',data:[],msg:'Please provide name'});
+        return res.json({status: false,data:[],msg:'Please provide name'});
     if (!req.body.email || req.body.email == '')
-        return res.json({status:'failure',data:[],msg:'Please provide email id'});
+        return res.json({status: false,data:[],msg:'Please provide email id'});
     if (!req.body.password || req.body.password == '')
-        return res.json({status:'failure',data:[],msg:'Please provide password for your account'});
+        return res.json({status: false,data:[],msg:'Please provide password for your account'});
     if (!req.body.terms_cond || req.body.terms_cond == '')
-        return res.json({status:'failure',data:[],msg:'Please read agree to terms and conditions to proceed'});
+        return res.json({status: false,data:[],msg:'Please read agree to terms and conditions to proceed'});
     if (validator.isEmail(req.body.email) === false) 
-        return res.json({status:'failure',data:[],msg:'Please provide valid email id'});
+        return res.json({status: false,data:[],msg:'Please provide valid email id'});
     if (!req.body.uname || req.body.uname == '')
-        return res.json({Status:'failure',data:[],msg:'Please provide username !!!'});
+        return res.json({status: false,data:[],msg:'Please provide username !!!'});
     
     const uname = req.body.uname.toLowerCase();
     const umail = req.body.email.toLowerCase();
@@ -40,9 +40,8 @@ exports.create = (req, res, next) =>
         if (err) return handleError(res, err);
         if (userfound) 
             if (userfound.email == umail)
-                return res.json({status:"failure",data:[],msg:"Email is already used !!!"});
-            else
-                return res.json({status:"failure",data:[],msg:"Username is already used !!!"});
+                return res.json({status: false,data:[],msg:"Email is already used !!!"});
+            else return res.json({status: false,data:[],msg:"Username is already used !!!"});
         else
         {
             let randcode = "";
@@ -91,7 +90,8 @@ exports.create = (req, res, next) =>
                 templateContent = templateContent.replace("##ACTIVATION_LINK##", activation_link);
                 templateContent = templateContent.replace("##MAIL_FOOTER##", config.mail_footer);
 
-                const data = {
+                const data = 
+                {
                     from: config.mail_from_email,
                     to: user.email,
                     subject: config.project_name + ' - Sign up',
@@ -100,29 +100,173 @@ exports.create = (req, res, next) =>
 
                 config.mailTransporter.sendMail(data, (error, info) =>
                 {
-                    if (error)
-                        console.log(error);
-                    else
-                        console.log('Email sent:', info.envelope);
+                    if (error) console.log(error);
+                    else console.log('Email sent:', info.envelope);
                 });
 
                 const token = jwt.sign({_id: user._id }, config.secrets.session, { expiresIn: 60*60*3, algorithm: 'HS256' });
-                return res.json({ status:"success",data:{token: token },msg:'Registered successfully. Please confirm your Email !!'});
+                return res.json({ status: true,data:{token: token },msg:'Registered successfully. Please confirm your Email !!'});
             });
         }
     })
 };
                                                     /**
+                                                        * Activate Account
+                                                    **/
+exports.verifyemail = (req, res)=>
+{
+    if (!req.params.act_code || req.params.act_code == '')
+        return res.json({status: false,data:[],msg:'Invalid request. Please try again'})
+
+    User.findOne({email_verify_key:req.params.act_code,email_verified:false},{},(err,userDetails)=>
+    {
+        if (err) return handleError(res, err);
+        if (userDetails)
+        {
+            const date_now = new Date();
+
+            function rand_code()
+            {
+                let randcode = "";
+                let possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+                for (let i = 0; i < 6; i++)
+                    randcode += possible.charAt(Math.floor(Math.random() * possible.length));
+                return randcode+`${userDetails._id}`.substring(10,15);
+            }
+
+            const ref_code = rand_code();
+            if (userDetails.referral_code)
+                ref_code = userDetails.referral_code;
+
+            User.updateOne({_id:userDetails._id},{$set:{email_verified:true,is_active:true,referral_code:ref_code,updated_by:userDetails._id,updated_at:date_now},$unset:{email_verify_key:1}}, (err1,status)=>
+            {
+                if (err1) return handleError(res, err);
+                
+                if (status.nModified)
+                {
+                    if (userDetails.referred_by)
+                        User.findOneAndUpdate({referral_code:userDetails.referred_by},{$inc:{referral_count: 1}}).exec();
+                    
+                    return res.json({status: true,data:[],msg:'Successfully verified your email !!!'});
+                }
+                else return res.json({status: true,data:[],msg:'Something went wrong. Please try again !!!'});
+            })
+        }
+        else return res.json({status: false,data:[],msg:'This link got expired !!!'});
+    })
+}
+                                                    /**
+                                                        * Authenticate User
+                                                    **/
+exports.authenticate = (req, res) =>
+{
+    if (!req.body.email || req.body.email == '')
+        return res.json({status: false,data:[],msg:'Enter Email to Login !!'});
+    if (!req.body.password || req.body.password == '')
+        return res.json({status: false,data:[],msg:'Enter Password to Login !!'});
+    
+    User.findOne({email:req.body.email},{source:0},(err,userfound)=>
+    {
+        if (err) return handleError(res, err);
+        if (userfound) 
+        {
+            if (!userfound.authenticate(req.body.password))
+                return res.json({status: false,data:[],msg:'Invalid Password !!'});
+            else if(!userfound.email_verified)
+                return res.json({status: false,data:[],msg:'Please verify your email address to proceed.'});
+            else
+            {
+                Logging.find({user_id:userfound._id, ipAddress: process.env.IP}).exec((error, login)=>
+                {
+                    if(error) 
+                        console.log("error");
+                    else
+                    {
+                        if(login.length === 0)
+                        {
+                            configureIpNotification(req, userfound, (data)=>
+                            {
+                                return res.json({status: false, data:[], msg:'Please Verify your Device by email !!!'});
+                            });
+                        }
+                        else
+                        {
+                            if (!userfound.two_fa_enable)
+                            {
+                                loginNotification(req, userfound, res, (cbData)=>
+                                {
+                                    return res.json({
+                                        status: true,
+                                        data:{
+                                            token:cbData.token,
+                                            first_login:cbData.is_first_login,
+                                            id:userfound._id,
+                                            referral_code:cbData.ref_code,
+                                            two_fa_enable:false,
+                                            role:userfound.role
+                                        },msg:'Login Sucessfull !!'});
+                                });
+                            }
+                            else
+                            {
+                                const token = jwt.sign(
+                                    {_id: userfound._id }, 
+                                    config.secrets.session, 
+                                    { expiresIn: 60*60*3,algorithm: 'HS256' });
+                                    
+                                return res.json({
+                                    status: true,
+                                    data:{
+                                        two_fa_enable:true,
+                                        token:token,
+                                        role:userfound.role,
+                                        id:userfound._id
+                                    },msg:'Waiting for 2FA'});
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        else return res.json({status: false,data:[],msg:'Invalid Email !!'});
+    });
+}
+                                                    /**
+                                                        * Get my Profile
+                                                    **/
+exports.myProfile = (req, res, next)=>
+{
+    const userId = req.user._id;
+    let query = User.findOne(
+    {
+        _id: userId
+    }, '-salt -hashedPassword -temp_password -email_verify_key -two_fa_secret_key -provider -source').lean()
+    query.lean().exec((err, user)=>
+    {
+        if (err) 
+            return next(err);
+        else if (!user)
+            return res.status(401).json({status: false,data:[],msg:'Unauthorized'});
+        else if (req.logger)
+        {
+            user.last_login = req.logger.access_time;
+            user.last_login_from = req.logger.ipAddress;
+        }
+        else
+            return res.json({status: true,data:user,msg:'Profile details'});
+    });
+};
+                                                    /**
                                                         * Change a users password
                                                     **/
-exports.changePassword = (req, res, next) =>
+exports.changePassword = (req, res) =>
 {
   const userId = req.user._id;
   const oldPass = String(req.body.oldPassword);
   const newPass = String(req.body.newPassword);
 
   if (!req.body.oldPassword || !req.body.newPassword || req.body.oldPassword == '' || req.body.newPassword == '')
-    return res.json({status:'failure',data:[],msg:'Please provide password'});
+    return res.json({status: false,data:[],msg:'Please provide password'});
 
   User.findById(userId, (err, user) =>
   {
@@ -157,180 +301,28 @@ exports.changePassword = (req, res, next) =>
             else
                 console.log('Email sent:', info.envelope);
         });
-        return res.json({status:'success',data:[],msg:'Password changed Successfully'});
+        return res.json({status: true,data:[],msg:'Password changed Successfully'});
       });
     }
     else
-      return res.send({status:'failure',data:[],msg:'Incorrect current password'});
+      return res.send({status: false,data:[],msg:'Incorrect current password'});
   });
 };
-                                                    /**
-                                                        * Get my Profile
-                                                    **/
-exports.myProfile = (req, res, next)=>
-{
-    const userId = req.user._id;
-    let query = User.findOne(
-    {
-        _id: userId
-    }, '-salt -hashedPassword -temp_password -email_verify_key -two_fa_secret_key -provider -source').lean()
-    query.lean().exec((err, user)=>
-    {
-        if (err) 
-            return next(err);
-        else if (!user)
-            return res.status(401).json({status:'failure',data:[],msg:'Unauthorized'});
-        else if (req.logger)
-        {
-            user.last_login = req.logger.access_time;
-            user.last_login_from = req.logger.ip_address;
-        }
-        else
-            return res.json({status:'success',data:user,msg:'Profile details'});
-    });
-};
-                                                    /**
-                                                        * Activate Account
-                                                    **/
-exports.verifyemail = (req, res)=>
-{
-    if (!req.params.act_code || req.params.act_code == '')
-        return res.json({status:'failure',data:[],msg:'Invalid request. Please try again'})
-
-    User.findOne({email_verify_key:req.params.act_code,email_verified:false},{},(err,userDetails)=>
-    {
-        if (err)
-            return handleError(res, err);
-            
-        if (userDetails)
-        {
-            const date_now = new Date();
-
-            function rand_code()
-            {
-                let randcode = "";
-                let possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-                for (let i = 0; i < 6; i++)
-                    randcode += possible.charAt(Math.floor(Math.random() * possible.length));
-                return randcode+`${userDetails._id}`.substring(10,15);
-            }
-
-            const ref_code = rand_code();
-            if (userDetails.referral_code)
-                ref_code = userDetails.referral_code;
-
-            User.updateOne({_id:userDetails._id},{$set:{email_verified:true,is_active:true,referral_code:ref_code,updated_by:userDetails._id,updated_at:date_now},$unset:{email_verify_key:1}}, (err1,status)=>
-            {
-                if (err1)
-                    return handleError(res, err);
-                
-                if (status.nModified)
-                {
-                    if (userDetails.referred_by)
-                        User.findOneAndUpdate({referral_code:userDetails.referred_by},{$inc:{referral_count: 1}}).exec();
-                    
-                    return res.json({status:'success',data:[],msg:'Successfully verified your email !!!'});
-                }
-                else
-                    return res.json({status:'success',data:[],msg:'Something went wrong. Please try again !!!'});
-            })
-        }
-        else
-            return res.json({status:'failure',data:[],msg:'This link got expired !!!'});
-    })
-}
-                                                    /**
-                                                        * Authenticate User
-                                                    **/
-exports.authenticate = (req, res) =>
-{
-    if (!req.body.email || req.body.email == '')
-        return res.json({status:'failure',data:[],msg:'Enter Email to Login !!'});
-    if (!req.body.password || req.body.password == '')
-        return res.json({status:'failure',data:[],msg:'Enter Password to Login !!'});
-    
-    User.findOne({email:req.body.email},{source:0},(err,userfound)=>
-    {
-        if (err) return handleError(res, err);
-        if (userfound) 
-        {
-            if (!userfound.authenticate(req.body.password))
-                return res.json({status:'failure',data:[],msg:'Invalid Password !!'});
-            else if(!userfound.email_verified)
-                return res.json({status:'failure',data:[],msg:'Please verify your email address to proceed.'});
-            else
-            {
-                Logging.find({user_id:userfound._id, ip_address:req.clientIp}).exec((error, login)=>
-                {
-                    if(error) 
-                        console.log("error");
-                    else
-                    {
-                        if(login.length === 0)
-                        {
-                            configureIpNotification(req, userfound, (data)=>
-                            {
-                                return res.json({status:'failure', data:[], msg:'Please Verify your Device by email !!!'});
-                            });
-                        }
-                        else
-                        {
-                            if (!userfound.two_fa_enable)
-                            {
-                                loginNotification(req, userfound, res, (cbData)=>
-                                {
-                                    return res.json({
-                                        status:'success',
-                                        data:{
-                                            token:cbData.token,
-                                            first_login:cbData.is_first_login,
-                                            id:userfound._id,
-                                            referral_code:cbData.ref_code,
-                                            two_fa_enable:false,
-                                            role:userfound.role
-                                        },msg:'Login Sucessfull !!'});
-                                });
-                            }
-                            else
-                            {
-                                const token = jwt.sign(
-                                    {_id: userfound._id }, 
-                                    config.secrets.session, 
-                                    { expiresIn: 60*60*3,algorithm: 'HS256' });
-                                    
-                                return res.json({
-                                    status:'success',
-                                    data:{
-                                        two_fa_enable:true,
-                                        token:token,
-                                        role:userfound.role,
-                                        id:userfound._id
-                                    },msg:'Waiting for 2FA'});
-                            }
-                        }
-                    }
-                });
-            }
-        }
-        else
-            return res.json({status:'failure',data:[],msg:'Invalid Email !!'});
-    });
-}
                                                     /**
                                                         * Enable SMS Auth or Change Contact_No
                                                     **/
 exports.enableSmsAuth = (req, res)=>
 {
     if(!req.body.contact_no || req.body.contact_no == '')
-        return res.json({status:'failure', data:[], msg:'Please provide contact no'});
+        return res.json({status: false, data:[], msg:'Please provide contact no'});
     User.updateOne({_id:req.user._id},{$set:{ contact_no: req.body.contact_no, contact_verify_enable: true}}, (error, status)=>
     {
         if (error)
             return handleError(res, error);
         if (status.nModified)
-            return res.json({status:'success', data:[], msg:'SMS Auth Enabled Sucessfully !!!'});
+            return res.json({status: true, data:[], msg:'SMS Auth Enabled Sucessfully !!!'});
         else
-            return res.json({status:'success', data:[], msg:'SMS Auth Already Enabled !!!'});
+            return res.json({status: true, data:[], msg:'SMS Auth Already Enabled !!!'});
     });
 }
                                                     /**
@@ -355,13 +347,13 @@ exports.sendSmsAuth = (req, res)=>
             if (error)
                 return handleError(res, error);
             if (status.nModified)
-                return res.json({status: 'success', data:[], msg: `Message Sent Successfully to ${req.user.contact_no}`});
+                return res.json({status: true, data:[], msg: `Message Sent Successfully to ${req.user.contact_no}`});
             else
-                return res.json({status:'failure', data:[], msg:'Something went wrong !!!'});
+                return res.json({status: false, data:[], msg:'Something went wrong !!!'});
         });
     }
     else
-        return res.json({status: 'failure', data:[], msg: `Unable to find contact number !!!`});
+        return res.json({status: true, data:[], msg: `Unable to find contact number !!!`});
 }
                                                     /**
                                                         * Verify SMS Authentication
@@ -369,15 +361,15 @@ exports.sendSmsAuth = (req, res)=>
 exports.verifySmsAuth = (req, res)=>
 {
     if (!req.body.sms_code || req.body.sms_code == '')
-        return res.json({status:'failure',data:[],msg:'Please provide SMS Code'});
+        return res.json({status: false,data:[],msg:'Please provide SMS Code'});
     User.updateOne({_id:req.user._id, contact_verify_enable:true, contact_verify_key: req.body.sms_code},{$unset:{ contact_verify_key: 1}}, (error, status)=>
     {
         if (error)
             return handleError(res, er1);
         else if (status.nModified)
-            return res.json({status: 'success', data:[], msg: `Verified Succesfully !!!`});
+            return res.json({status: true, data:[], msg: `Verified Succesfully !!!`});
         else
-            return res.json({status:'failure', data:[], msg:'Invalid Code !!!'});
+            return res.json({status: false, data:[], msg:'Invalid Code !!!'});
     });
 }
                                                     /**
@@ -390,9 +382,9 @@ exports.disableSmsAuth = (req, res)=>
         if (error)
             return handleError(res, er1);
         if (status.nModified)
-            return res.json({status: 'success', data:[], msg: `SMS Auth Disabled Succesfully !!!`});
+            return res.json({status: true, data:[], msg: `SMS Auth Disabled Succesfully !!!`});
         else
-            return res.json({status:'failure', data:[], msg:'SMS Auth Already Disabled !!!'});
+            return res.json({status: false, data:[], msg:'SMS Auth Already Disabled !!!'});
     });
 }
                                                     /**
@@ -401,7 +393,7 @@ exports.disableSmsAuth = (req, res)=>
 exports.resendVerification = (req, res)=>
 {
     if (!req.body.email || req.body.email == '')
-        return res.json({status:'failure',data:[],msg:'Please provide email address'});
+        return res.json({status: false,data:[],msg:'Please provide email address'});
     
     User.findOne({email:req.body.email}, (er1,userFound)=>
     {
@@ -445,15 +437,15 @@ exports.resendVerification = (req, res)=>
                             else
                                 console.log('Email sent:', info.envelope);
                         });
-                        return res.json({status:'success',data:[],msg:'An email was sent to you.'})
+                        return res.json({status: true,data:[],msg:'An email was sent to you.'})
                     }
                 })
             }
             else
-                return res.json({status:'failure',data:[],msg:'Account have already got verified.'});
+                return res.json({status: false,data:[],msg:'Account have already got verified.'});
         }
         else
-            return res.json({status:'failure',data:[],msg:'Invalid email provided or Already got verified.'});
+            return res.json({status: false,data:[],msg:'Invalid email provided or Already got verified.'});
     })
 }
                                                     /**
@@ -482,14 +474,14 @@ exports.updateProfile = (req, res)=>
             if (err)
                 return handleError(res, err);
             if (status.nModified)
-                return res.json({status:'success',data:[],msg:'Updated Successfully'});
+                return res.json({status: true,data:[],msg:'Updated Successfully'});
             else
-                return res.json({status:'failure',data:[],msg:'No records updated'});
+                return res.json({status: false,data:[],msg:'No records updated'});
             
         })
     }
     else
-        return res.json({status:'failure',data:[],msg:'Something went wrong. Please try again.'});
+        return res.json({status: false,data:[],msg:'Something went wrong. Please try again.'});
 }
                                                     /**
                                                         * Reset Password
@@ -497,7 +489,7 @@ exports.updateProfile = (req, res)=>
 exports.forgotPassword = (req, res)=>
 {
     if (!req.body.email || req.body.email == '')
-        return res.json({status:'failure',data:[],msg:'Please provide your Email !!!'});
+        return res.json({status: false,data:[],msg:'Please provide your Email !!!'});
 
     User.findOne({email:req.body.email}, (err, userfound)=>
     {
@@ -545,14 +537,14 @@ exports.forgotPassword = (req, res)=>
                         else
                             console.log('Email sent:', info.envelope);
                     });
-                    return res.json({status:'success',data:[],msg:`Please check your Email !!!`});
+                    return res.json({status: true,data:[],msg:`Please check your Email !!!`});
                 }
                 else
-                    return res.json({status:'failure',data:[],msg:'Something went wrong'});
+                    return res.json({status: false,data:[],msg:'Something went wrong'});
             })
         }
         else
-            return res.json({status:'failure',data:[],msg:'Invalid email provided'});
+            return res.json({status: false,data:[],msg:'Invalid email provided'});
     });
 }
                                                     /**
@@ -561,7 +553,7 @@ exports.forgotPassword = (req, res)=>
 exports.verifyIP = (req, res)=>
 {
     if (!req.params.ip || req.params.ip == '')
-        return res.json({status:'failure',data:[],msg:'Invalid request'});
+        return res.json({status: false,data:[],msg:'Invalid request'});
 
     User.findOne({ip_verify_key:req.params.ip},(err,userfound)=>
     {
@@ -577,7 +569,7 @@ exports.verifyIP = (req, res)=>
                 {
                     const log = new Logging({
                         user_id : userfound._id,
-                        ip_address : req.clientIp,
+                        ipAddress : req.clientIp,
                         user_agent : req.headers['user-agent'],
                         access_time : new Date(),
                         request_url : req.originalUrl,
@@ -586,15 +578,15 @@ exports.verifyIP = (req, res)=>
                     {
                         if(error2)
                             return handleError(res, err);
-                        return res.json({status:'success',data:[],msg:'Device Verified you can Login Now !!!'});
+                        return res.json({status: true,data:[],msg:'Device Verified you can Login Now !!!'});
                     });
                 }
                 else
-                    return res.json({status:'failure',data:[],msg:'This link has expired !!!'});
+                    return res.json({status: false,data:[],msg:'This link has expired !!!'});
             });
         }
         else
-            return res.json({status:'failure',data:[],msg:'This link has expired !!!'});
+            return res.json({status: false,data:[],msg:'This link has expired !!!'});
     });
 }
                                                     /**
@@ -603,7 +595,7 @@ exports.verifyIP = (req, res)=>
 exports.validateKey = (req, res)=>
 {
     if (!req.params.tempPass || req.params.tempPass == '')
-        return res.json({status:'failure',data:[],msg:'Invalid request'});
+        return res.json({status: false,data:[],msg:'Invalid request'});
     
     User.findOne({temp_password:req.params.tempPass},(err,userfound)=>
     {
@@ -611,8 +603,8 @@ exports.validateKey = (req, res)=>
             return handleError(res, err);
         
         if (!userfound)
-            return res.json({status:'failure',data:[],msg:'This link has expired !!!'});
-        return res.json({status:'success',data:[],msg:'valid'});
+            return res.json({status: false,data:[],msg:'This link has expired !!!'});
+        return res.json({status: true,data:[],msg:'valid'});
     });
 }
                                                     /**
@@ -621,9 +613,9 @@ exports.validateKey = (req, res)=>
 exports.setPassword = (req, res)=>
 {
     if (!req.body.key || req.body.key == '')
-        return res.json({status:'failure',data:[],msg:'Invalid request. Please try again'});
+        return res.json({status: false,data:[],msg:'Invalid request. Please try again'});
     if (!req.body.password || req.body.password == '')
-        return res.json({status:'failure',data:[],msg:'Please provide password'})
+        return res.json({status: false,data:[],msg:'Please provide password'})
 
     User.findOne({temp_password:req.body.key}, (err, user) =>
     {
@@ -636,13 +628,13 @@ exports.setPassword = (req, res)=>
                 if (err)
                     return handleError(res, err) 
                 if (saved)
-                    return res.json({status:'success',data:[],msg:'Password updated Successfully'});
+                    return res.json({status: true,data:[],msg:'Password updated Successfully'});
                 else
-                    return res.json({status:'failure',data:[],msg:'Unable to process your request. Please try again'});
+                    return res.json({status: false,data:[],msg:'Unable to process your request. Please try again'});
             });
         }
         else
-            return res.json({status:'failure',data:[],msg:'Invalid request, The link might have expired. Please try again.'});
+            return res.json({status: false,data:[],msg:'Invalid request, The link might have expired. Please try again.'});
     });
 }
                                                     /**
@@ -651,7 +643,7 @@ exports.setPassword = (req, res)=>
 exports.enable2Factor = (req, res) =>
 {
     if (req.user.two_fa_enable)
-        return res.json({status:'failure',data:[],msg:`2-FA Already Activated !!!`});
+        return res.json({status: false,data:[],msg:`2-FA Already Activated !!!`});
     
     if (req.user.two_fa_authurl) 
     {
@@ -679,7 +671,7 @@ exports.enable2Factor = (req, res) =>
                 }
                 User.updateOne({_id:req.user._id},{$set:{backup_codes:codesArray}}).exec();
             }
-            return res.json({status:'success',data:{qr_code_data:image_data,secret:req.user.two_fa_secret_key,backup_codes:codesArray},msg:'QR code for enabling 2 factor authentication'}); // A data URI for the QR code image
+            return res.json({status: true,data:{qr_code_data:image_data,secret:req.user.two_fa_secret_key,backup_codes:codesArray},msg:'QR code for enabling 2 factor authentication'}); // A data URI for the QR code image
         });
     }
     else
@@ -718,11 +710,11 @@ exports.enable2Factor = (req, res) =>
             {
                 QRCode.toDataURL(otpauth_url, (err, image_data)=>
                 {
-                    return res.json({status:'success',data:{qr_code_data:image_data,secret:user_secret,backup_codes:codesArray},msg:'QR code for enabling 2 factor authentication.'}); // A data URI for the QR code image
+                    return res.json({status: true,data:{qr_code_data:image_data,secret:user_secret,backup_codes:codesArray},msg:'QR code for enabling 2 factor authentication.'}); // A data URI for the QR code image
                 });
             }
             else
-                return res.json({status:'failure',data:[],msg:'Something went wrong. Please try again'});
+                return res.json({status: false,data:[],msg:'Something went wrong. Please try again'});
         })
     }  
 }
@@ -732,7 +724,7 @@ exports.enable2Factor = (req, res) =>
 exports.verify2Factor = (req, res)=>
 {
     if (!req.body.token_code || req.body.token_code == '')
-        return res.json({status:'failure',data:[],msg:'Please provide code to verify'});
+        return res.json({status: false,data:[],msg:'Please provide code to verify'});
 
     User.findOne({_id:req.user._id},{},(err, userfound)=>
     {
@@ -749,17 +741,17 @@ exports.verify2Factor = (req, res)=>
                     loginNotification(req, userfound, res, (cbData)=>
                     {
                         User.updateOne({_id:req.user._id,two_fa_enable:false},{$set:{two_fa_enable:true}}).exec();
-                        return res.json({status:'success',data:{token:cbData.token,first_login:cbData.is_first_login,referral_code:cbData.ref_code},msg:'Sucessfully Authenticated !!!'});
+                        return res.json({status: true,data:{token:cbData.token,first_login:cbData.is_first_login,referral_code:cbData.ref_code},msg:'Sucessfully Authenticated !!!'});
                     })
                 }
                 else
-                   return res.json({status:'failure',data:verified,msg:'Invalid code'});
+                   return res.json({status: false,data:verified,msg:'Invalid code'});
             }
             else
-                return res.json({status:'failure',data:[],msg:'Please set up two factor authentication'});
+                return res.json({status: false,data:[],msg:'Please set up two factor authentication'});
         }
         else
-            return res.json({status:'failure',data:[],msg:'Something went wrong. Please try again'});
+            return res.json({status: false,data:[],msg:'Something went wrong. Please try again'});
     });
 }
                                                     /**
@@ -773,9 +765,9 @@ exports.disable2Factor = (req, res) =>
             return handleError(res, err);
 
         if (status.nModified)
-            return res.json({status:'success',data:[],msg:'Disabled 2 Factor authentication'});
+            return res.json({status: true,data:[],msg:'Disabled 2 Factor authentication'});
         else
-            return res.json({status:'failure',data:[],msg:'Something went wrong. Please try again'});
+            return res.json({status: false,data:[],msg:'Something went wrong. Please try again'});
     });
 }
                                                     /**
@@ -789,7 +781,7 @@ exports.updateTracking = (req, res) =>
     else if(req.params.status == 1)
         updateObj.can_track = true;
     else
-        return res.json({status:'failure',data:[],msg:'Something went wrong Please try again'});
+        return res.json({status: false,data:[],msg:'Something went wrong Please try again'});
 
     User.updateOne({_id:req.user._id},{$set:updateObj},(err, updated) =>
     {
@@ -797,9 +789,9 @@ exports.updateTracking = (req, res) =>
             return handleError(res, err);
 
         if (updated.nModified)
-            return res.json({status:'success',data:[],msg:'Updated successfully'});
+            return res.json({status: true,data:[],msg:'Updated successfully'});
         else
-            return res.json({status:'failure',data:[],msg:'Unable to update now. Please try again'});
+            return res.json({status: false,data:[],msg:'Unable to update now. Please try again'});
     });
 }
                                                     /**
@@ -809,9 +801,9 @@ exports.getKycInfo = function(req, res)
 {
     const kyc = req.user.kyc ? req.user.kyc : {};
     if (req.user.is_kyc_verified === 'Verified')
-        return res.json({status:'success',data:{kyc:kyc,is_kyc_verified:req.user.is_kyc_verified,kyc_created_at:req.user.kyc_created_at,kyc_updated_at:req.user.kyc_updated_at,kyc_comment:req.user.kyc_comment},msg:'Your KYC is verified'});
+        return res.json({status: true,data:{kyc:kyc,is_kyc_verified:req.user.is_kyc_verified,kyc_created_at:req.user.kyc_created_at,kyc_updated_at:req.user.kyc_updated_at,kyc_comment:req.user.kyc_comment},msg:'Your KYC is verified'});
     else
-        return res.json({status:'success',data:{kyc:kyc,is_kyc_verified:req.user.is_kyc_verified},msg:'Please check and update your information to get your KYC verified'});
+        return res.json({status: true,data:{kyc:kyc,is_kyc_verified:req.user.is_kyc_verified},msg:'Please check and update your information to get your KYC verified'});
 }
                                                     /**
                                                         * Save user KYC
@@ -847,11 +839,11 @@ exports.saveKyc = function(req, res)
         if (err)
             return handleError(res, err);
         if (updated.nModified)
-            return res.json({status:'success',data:req.body,msg:'Updated successfully. Pending for verification'});
+            return res.json({status: true,data:req.body,msg:'Updated successfully. Pending for verification'});
         else
         {
             const kyc = req.user.kyc ? req.user.kyc : req.body;
-            return res.json({status:'failure',data:kyc,msg:'Nothing to update.'});
+            return res.json({status: false,data:kyc,msg:'Nothing to update.'});
         }
     });
   }
@@ -862,7 +854,7 @@ exports.saveKyc = function(req, res)
 exports.verify_backup_code = (req, res)=>
 {
     if (!req.body.key)
-        return res.json({status:'failure',data:[],msg:'Please provide one of your backup codes'});
+        return res.json({status: false,data:[],msg:'Please provide one of your backup codes'});
 
     if (req.user.backup_codes && req.user.backup_codes.length > 0) 
     {
@@ -872,13 +864,13 @@ exports.verify_backup_code = (req, res)=>
         {
             codes.splice(code_index,1);
             User.updateOne({_id:req.user._id},{$set:{backup_codes:codes}}).exec();
-            return res.json({status:'success',data:codes,msg:'successfully verified'});
+            return res.json({status: true,data:codes,msg:'successfully verified'});
         }
         else
-            return res.json({status:'failure',data:[],msg:'Invlaid key'});
+            return res.json({status: false,data:[],msg:'Invlaid key'});
     }
     else
-        return res.json({status:'failure',data:[],msg:'No backup codes found'});
+        return res.json({status: false,data:[],msg:'No backup codes found'});
 }
                                                     /**
                                                         * User whom submitted KYC
@@ -917,7 +909,7 @@ exports.getKycUsers = (req, res)=>
     {
         userQry.exec(function(er2,usersList)
         {
-            return res.json({status:'success',data:usersList,total:usersCount,msg:'Users list'});
+            return res.json({status: true,data:usersList,total:usersCount,msg:'Users list'});
         });
     });
 }
@@ -927,10 +919,10 @@ exports.getKycUsers = (req, res)=>
 exports.kycStatus = (req, res)=>
 {
     if (!req.body.user_id || req.body.user_id == '')
-        return res.json({status:'failure',data:[],msg:'Please provide user id'});
+        return res.json({status: false,data:[],msg:'Please provide user id'});
     
     if (!req.body.status || req.body.status == '')
-        return res.json({status:'failure',data:[],msg:'Please provide status'});
+        return res.json({status: false,data:[],msg:'Please provide status'});
     
     User.findOne({_id:req.body.user_id},{email:1,name:1}, (er2,userFound)=>
     {
@@ -963,10 +955,10 @@ exports.kycStatus = (req, res)=>
                 else
                     console.log('Email sent:', info.envelope);
             });
-            return res.json({status:'success',data:[],msg:'Updated successfully'});
+            return res.json({status: true,data:[],msg:'Updated successfully'});
         }
         else
-            return res.json({status:'failure',data:[],msg:'Nothing was updated. Please try again'});
+            return res.json({status: false,data:[],msg:'Nothing was updated. Please try again'});
         });
     });
 }
@@ -988,7 +980,7 @@ exports.referralStats = (req, res)=>
     Referral.find({}).populate({path:'user_id', select:'_id name email'}).lean().exec((er1,refStats)=>
     {
         if (er1) return handleError(res, er1);
-        return res.json({status:'success',data:refStats,msg:'Multi level referral statistics'});
+        return res.json({status: true,data:refStats,msg:'Multi level referral statistics'});
     });
 }
                                                     /**
@@ -1001,11 +993,11 @@ exports.myReferences = (req, res)=>
         User.find({referred_by:req.user.referral_code},{name:1,email:1,email_verified:1,is_kyc_verified:1,is_airdrop:1,created_at:1}).lean().exec((er1, refList)=>
         {
             if (er1) { return handleError(res, er1); }
-            return res.json({status:'success',data:refList,msg:'Referred users list'});
+            return res.json({status: true,data:refList,msg:'Referred users list'});
         });
     }
     else
-        return res.json({status:'failure',data:[],msg:'Unauthorized to view report'});
+        return res.json({status: false,data:[],msg:'Unauthorized to view report'});
 }
                                                     /**
                                                         * Validate Username
@@ -1013,7 +1005,7 @@ exports.myReferences = (req, res)=>
 exports.validateUname = (req, res)=>
 {
     if (!req.body.uname || req.body.uname == '')
-        return res.json({status:'failure',data:[],msg:'Please provide user name'});
+        return res.json({status: false,data:[],msg:'Please provide user name'});
 
     const uname = req.body.uname.toLowerCase();
 
@@ -1022,9 +1014,9 @@ exports.validateUname = (req, res)=>
         if (er1)
             return handleError(res, er1);
         if (uFound)
-            return res.json({status:'failure',data:[],msg:`${req.body.uname} already exists.`});
+            return res.json({status: false,data:[],msg:`${req.body.uname} already exists.`});
         else
-            return res.json({status:'success',data:[],msg:'Available'});
+            return res.json({status: true,data:[],msg:'Available'});
     })
 }
                                                     /**
@@ -1033,7 +1025,7 @@ exports.validateUname = (req, res)=>
 exports.search = (req, res)=>
 {
     if (!req.body.uname || req.body.uname == '')
-        return res.json({status:'failure',data:[],msg:'Please provide user name to search'});
+        return res.json({status: false,data:[],msg:'Please provide user name to search'});
 
     const uname = req.body.uname.toLowerCase();
     User.findOne({uname:uname},{uname:1},(er1, uFound)=>
@@ -1041,9 +1033,9 @@ exports.search = (req, res)=>
         if (er1)
             return handleError(res, er1);
         if (uFound)
-            return res.json({status:'success',data:[],msg:`${req.body.uname} exists.`});
+            return res.json({status: true,data:[],msg:`${req.body.uname} exists.`});
         else
-            return res.json({status:'failure',data:[],msg:'User not found'});
+            return res.json({status: false,data:[],msg:'User not found'});
     });
 }
                                                     /**
@@ -1106,7 +1098,7 @@ exports.listUsers = function(req, res)
     {
         balQry.exec(function(er2,userResp)
         {
-            return res.json({status:'success',total:usersCount,data:userResp,msg:'Users list'});
+            return res.json({status: true,total:usersCount,data:userResp,msg:'Users list'});
         });
     })
 }
@@ -1174,7 +1166,7 @@ exports.stats = function(req, res)
         })
         .on('end',noData=>
         {
-            return res.json({status:'success',data:finalData,msg:'Dashboard data'});
+            return res.json({status: true,data:finalData,msg:'Dashboard data'});
         });
     });
 }
@@ -1412,10 +1404,10 @@ function multilevelReference(cb)
 
 const validationError = (res, err) =>
 {
-    return res.status(422).json({status:'failure',data:err,msg:'Something went wrong'});
+    return res.status(422).json({status: false,data:err,msg:'Something went wrong'});
 };
 
 function handleError(res, err)
 {
-    return res.status(500).send({status:'failure',data:err,msg:'Something went wrong'});
+    return res.status(500).send({status: false,data:err,msg:'Something went wrong'});
 }

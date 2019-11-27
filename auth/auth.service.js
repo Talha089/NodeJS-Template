@@ -18,17 +18,14 @@ const validateJwt = expressJwt({ secret: config.secrets.session });
                         */
 function isAuthenticated()
 {
-  return compose()
-                                            // Validate jwt
-    .use((req, res, next)=>
+  return compose().use((req, res, next)=>
     {
       if (!req.headers.authorization)
-        return res.status(200).send({status:'failure',data:[],msg:'Please login to perform this action'});
-
-                        // allow access_token to be passed through query parameter as well
+        return res.status(200).send({status: false,data:[],msg:'Please login to perform this action'});
 
       if(req.query && req.query.hasOwnProperty('access_token')) 
         req.headers.authorization = 'Bearer ' + req.query.access_token;
+
       validateJwt(req, res, next);
     })
                                           // Attach user to request
@@ -39,7 +36,7 @@ function isAuthenticated()
         if (err)
           return next(err);
         if (!user)
-          return res.status(200).send({status:'failure',data:[],msg:'Unauthorized'});
+          return res.status(200).send({status: false,data:[],msg:'Unauthorized'});
         Logging.find({user_id:user._id,request_url:'/api/users/auth'},{ip_address:1,access_time:1}).skip(1).limit(1).sort({access_time: -1}).exec(function(er1,logger)
         {
           req.user = user;
@@ -83,7 +80,7 @@ function signToken(id)
 function setTokenCookie(req, res)
 {
   if (!req.user)
-    return res.status(404).json({ status:'failure',data:[],msg:'Something went wrong, please try again.'});
+    return res.status(404).json({ status: false,data:[],msg:'Something went wrong, please try again.'});
   let token = signToken(req.user._id, req.user.role);
   res.cookie('token', JSON.stringify(token));
   res.redirect('/');
@@ -98,10 +95,10 @@ function isVerified()
     .use(isAuthenticated())
     .use(function meetsRequirements(req, res, next)
     {
-      if (req.user.email_verified)
+      if (req.user.emailVerified)
         next();
       else
-        return res.json({status:'failure',data:[],msg:'Please verify your email to proceed.'});
+        return res.json({status: false,data:[],msg:'Please verify your email to proceed.'});
     });
 }
 
@@ -119,11 +116,11 @@ function isKycVerified()
       else
       {
         if (req.user.is_kyc_verified == 'InComplete')
-          return res.json({status:'failure',data:[],msg:'Please submit kyc details. Only KYC verified users are allowed to perform this action.'});
+          return res.json({status: false,data:[],msg:'Please submit kyc details. Only KYC verified users are allowed to perform this action.'});
         else if(req.user.is_kyc_verified == 'Pending')
-          return res.json({status:'failure',data:[],msg:'Please update kyc details or Please allow us sometime to get your kyc verified by admin'});
+          return res.json({status: false,data:[],msg:'Please update kyc details or Please allow us sometime to get your kyc verified by admin'});
         else
-          return res.json({status:'failure',data:[],msg:'Only KYC verified users are allowed to perform this action.'});
+          return res.json({status: false,data:[],msg:'Only KYC verified users are allowed to perform this action.'});
       }
     });
 }
@@ -154,13 +151,13 @@ function verifyPin()
       console.log(req.body);
       
       if (!req.body.auth_pin)
-        return res.json({status:'failure',data:[],msg:'Please provide PIN to proceed'});
+        return res.json({status: false,data:[],msg:'Please provide PIN to proceed'});
       else if (!req.user.auth_pin)
-        return res.json({status:'failure',data:[],msg:'Please setup authentication PIN to proceed'});
+        return res.json({status: false,data:[],msg:'Please setup authentication PIN to proceed'});
       else if (req.body.auth_pin && (req.user.auth_pin == req.body.auth_pin))
         next();
       else
-        return res.json({status:'failure',data:[],msg:'Please provide valid PIN to proceed'});
+        return res.json({status: false,data:[],msg:'Please provide valid PIN to proceed'});
     });
 }
 
