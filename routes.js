@@ -8,7 +8,8 @@ module.exports = (app) =>
 {
   app.use('/auth', require('./auth'));
 
-  app.use('/api/users', require('./api/user'));
+  app.use('/api/user', require('./api/user'));
   app.use('/api/logging', require('./api/logging'));
+  app.use('/api/property', require('./api/property'));
   app.use('/api/countries', require('./api/countries'));
 };

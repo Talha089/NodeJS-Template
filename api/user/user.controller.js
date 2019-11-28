@@ -117,11 +117,11 @@ exports.authenticate = (req, res) =>
                 {
                     if(error) 
                         return handleError(res, error);
-                    else if(login.length === 0)
-                        configureIpNotification(req, userfound, (data)=>
-                        {
-                            return res.json({status: false, data:[], msg:'Please Verify your Device by email !!!'});
-                        });
+                    // else if(login.length === 0)
+                    //     configureIpNotification(req, userfound, (data)=>
+                    //     {
+                    //         return res.json({status: false, data:[], msg:'Please Verify your Device by email !!!'});
+                    //     });
                     else if (!userfound.twoFaEnabled)
                         loginNotification(req, userfound, res, (cbData)=>
                         {
