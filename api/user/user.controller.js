@@ -7,6 +7,8 @@ const QRCode = require('qrcode');
 const jwt = require('jsonwebtoken');
 const validator = require('validator');
 const speakeasy = require("speakeasy");
+const sigUtil = require('eth-sig-util');
+const ethUtil = require('ethereumjs-util');
 
 const User = require('./user.model');
 const config = require('../../config/environment');
@@ -159,6 +161,20 @@ exports.authenticate = (req, res) =>
     });
 }
                                                     /**
+                                                        * Search User By Address
+                                                    **/
+exports.getUser = (req, res) =>
+{
+    if (!req.params.address || req.params.address == '')
+        return res.json({status: false,data:[],msg:'Please provide address !!'});
+    User.findOne({publicAddress:req.params.address}).lean().exec((err,userfound)=>
+    {
+        if (err) return handleError(res, err);
+        else if (userfound) return res.json({status: true, data: userfound, msg: 'Found a user'});
+        else return res.json({status: false,data:[],msg:'User Not Found !!'});
+    });
+}
+                                                    /**
                                                         * Activate Account
                                                     **/
 exports.verifyEmail = (req, res)=>
@@ -290,6 +306,41 @@ exports.myProfile = (req, res, next)=>
         else if (!user)
             return res.status(401).json({status: false,data:[],msg:'User not found'});
         return res.json({status: true,data:user,msg:'Profile details'});
+    });
+};
+                                                    /**
+                                                        * Get my Profile
+                                                    **/
+exports.authMeta = (req, res, next)=>
+{
+    const {publicAddress, signature} = req.body;
+    if(!publicAddress || !signature)
+        return res.json({status: false,data:[],msg:'Please all inputs !!'});
+
+    User.findOne({ publicAddress }).lean().exec((error, user)=>
+    {
+        if (error) return next(error);
+        else if (!user) return res.status(401).json({status: false, data: [], msg:'User not found'});
+        const msg = `Hello from Toptal!`;
+        const msgBuffer = ethUtil.toBuffer(Buffer.from(msg, 'utf8'));
+        const msgHash = ethUtil.hashPersonalMessage(msgBuffer);
+        const signatureBuffer = ethUtil.toBuffer(signature);
+        const signatureParams = ethUtil.fromRpcSig(signatureBuffer);
+        const publicKey = ethUtil.ecrecover(
+          msgHash,
+          signatureParams.v,
+          signatureParams.r,
+          signatureParams.s
+        );
+        const addressBuffer = ethUtil.publicToAddress(publicKey);
+        const address = ethUtil.bufferToHex(addressBuffer);
+    
+        console.log(`address = ${address}`);
+        console.log(`publicAddress = ${publicAddress}`);
+
+        if (address.toLowerCase() === publicAddress.toLowerCase())
+            return res.json({status: true,data:user,msg:'Sucessfully logged in'});
+        else return res.status(401).send({ error: 'Signature verification failed' });
     });
 };
                                                     /**
@@ -672,7 +723,7 @@ exports.verifyBackupCode = (req, res)=>
         else return res.json({status: false, data:[], msg:'Invalid key'});
     }
     else return res.json({status: false, data:[], msg:'No backup codes found'});
-}
+};
 
 function configureIpNotification(req, user, next)
 {
@@ -711,7 +762,7 @@ function configureIpNotification(req, user, next)
         }
         else next(false)
     });
-}
+};
 
 function loginNotification(req, userfound, res, next)
 {
@@ -745,7 +796,7 @@ function loginNotification(req, userfound, res, next)
     User.updateOne({_id: userfound._id},{$set:{lastLogin: dateNow, lastLoginFrom: req._remoteAddress}}).exec();
     
     next({token:token,firstLogin:isFirstLogin});
-}
+};
 
 const validationError = (res, err)=>
 {

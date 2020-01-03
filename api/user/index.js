@@ -31,4 +31,8 @@ router.post('/verify2Factor', auth.isAuthenticated(), auth.isVerified(), control
 router.get('/disable2Factor', auth.isAuthenticated(), auth.isVerified(), controller.disable2Factor); 
 router.post('/verifyBackupCode', auth.isAuthenticated(), auth.isVerified(), controller.verifyBackupCode);
 
+                                    /* Blockchain Metamask Login/Signup */
+router.post('/authMeta', controller.authMeta);
+router.get('/getUser/:address', controller.getUser);
+
 module.exports = router;

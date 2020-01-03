@@ -24,12 +24,12 @@ User.findOne({role:'admin'}).exec((er1,adminFound)=>
 			password: 'Admin@2018',
 			source: 'local',
 			email_verified: true,
-			is_active: true
+			is_active: true,
+			publicAddress: "admin@admin.com",
 		});
 		adminObj.save((er1,saved)=>
 		{
-			if(saved)
-				console.log('Admin Created');
+			if(saved) console.log('Admin Created');
 		});
 	}
 })

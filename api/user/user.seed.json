@@ -3,12 +3,14 @@
 	    "provider": "local",
 	    "name": "Test User",
 	    "email": "test@test.com",
+	    "publicAddress": "test@test.com",
 	    "password": "test"
   	}, {
 	    "provider": "local",
 	    "role": "admin",
 	    "name": "Admin",
 	    "email": "admin@admin.com",
+	    "publicAddress": "admin@admin.com",
 	    "password": "admin"
   	}
 ]
