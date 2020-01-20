@@ -5,12 +5,12 @@ const _ = require('lodash');
 const async = require('async');
 const QRCode = require('qrcode');
 const jwt = require('jsonwebtoken');
+const User = require('./user.model');
 const validator = require('validator');
 const speakeasy = require("speakeasy");
 const sigUtil = require('eth-sig-util');
 const ethUtil = require('ethereumjs-util');
 
-const User = require('./user.model');
 const config = require('../../config/environment');
 const Logging = require('../logging/logging.model');
 const logging = require('../logging/logging.controller');
